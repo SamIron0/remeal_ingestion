@@ -1,7 +1,7 @@
 const axios = require("axios");
 const { createClient } = require("@supabase/supabase-js");
 const { getRedisClient } = require("./redisClient"); // Assume this is implemented
-const { extractIngredientName, normalizeIngredient, getNutritionInfo } = require("./ingredientUtils"); // Assume these are implemented
+const { extractIngredientName, normalizeIngredient, getNutritionInfo } = require("./ingredient_utils"); // Assume these are implemented
 
 exports.handler = async (event, context) => {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
