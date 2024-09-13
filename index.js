@@ -1,33 +1,30 @@
 const axios = require("axios");
 const { createClient } = require("@supabase/supabase-js");
-const { getRedisClient } = require("./redisClient"); // Assume this is implemented
-const { extractIngredientName, normalizeIngredient, getNutritionInfo } = require("./ingredient_utils"); // Assume these are implemented
+const { getRedisClient } = require("./utils"); // Assume this is implemented
+const {
+  extractIngredientName,
+  normalizeIngredient,
+  getNutritionInfo,
+} = require("./utils"); // Assume these are implemented
 
-exports.handler = async (event, context) => {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+async function ingestRecipe(recipeData) {
+  const supabaseUrl = process.env.SUPABASE_URL;
   const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
   try {
-    console.log("Received POST request in recipe_ingestion");
-    const recipeData = JSON.parse(event.body);
+    console.log("Starting recipe ingestion");
     console.log("Received recipe data:", recipeData);
 
     const supabase = createClient(supabaseUrl, supabaseKey);
     const recipeId = await insertRecipe(supabase, recipeData);
     await indexRecipe(supabase, recipeId, recipeData.ingredients);
 
-    return {
-      statusCode: 200,
-      body: JSON.stringify({ message: "Recipe ingestion successful" }),
-    };
+    console.log("Recipe ingestion successful");
+    return { success: true, recipeId };
   } catch (error) {
-    console.error("Error in recipe_ingestion POST:", error);
-    return {
-      statusCode: 500,
-      body: JSON.stringify({ error: error.message }),
-    };
+    console.error("Error in recipe ingestion:", error);
+    return { success: false, error: error.message };
   }
-};
+}
 
 async function insertRecipe(supabase, recipeData) {
   console.log("Inserting recipe into database");
@@ -63,9 +60,11 @@ async function indexRecipe(supabase, recipeId, ingredients) {
     })
   );
 
-  await Promise.all(ingredientData.map(data => 
-    indexIngredient(supabase, redis, recipeId, data)
-  ));
+  await Promise.all(
+    ingredientData.map((data) =>
+      indexIngredient(supabase, redis, recipeId, data)
+    )
+  );
 
   const totalNutrition = calculateTotalNutrition(ingredientData);
   await updateRecipeNutrition(supabase, recipeId, totalNutrition);
@@ -73,7 +72,12 @@ async function indexRecipe(supabase, recipeId, ingredients) {
   console.log(`Finished indexRecipe for recipeId: ${recipeId}`);
 }
 
-async function indexIngredient(supabase, redis, recipeId, { extractedName, nutritionInfo }) {
+async function indexIngredient(
+  supabase,
+  redis,
+  recipeId,
+  { extractedName, nutritionInfo }
+) {
   console.log(`Processing ingredient: ${extractedName}`);
 
   const { error } = await supabase.rpc("index_ingredient", {
@@ -87,14 +91,19 @@ async function indexIngredient(supabase, redis, recipeId, { extractedName, nutri
     p_carbohydrates: nutritionInfo?.carbohydrates || 0,
   });
 
-  if (error) throw new Error(`Error in index_ingredient for ${extractedName}: ${error.message}`);
+  if (error)
+    throw new Error(
+      `Error in index_ingredient for ${extractedName}: ${error.message}`
+    );
 
   await updateRedis(redis, extractedName, recipeId);
 }
 
 async function updateRedis(redis, ingredient, recipeId) {
   const existingRecipes = await redis.get(ingredient);
-  const newValue = existingRecipes ? `${existingRecipes},${recipeId}` : `${recipeId}`;
+  const newValue = existingRecipes
+    ? `${existingRecipes},${recipeId}`
+    : `${recipeId}`;
   await redis.set(ingredient, newValue);
   console.log(`Updated Redis for ingredient: ${ingredient}`);
 }
@@ -112,17 +121,19 @@ function calculateTotalNutrition(ingredientData) {
 }
 
 async function updateRecipeNutrition(supabase, recipeId, totalNutrition) {
-  const { error } = await supabase
-    .from("nutrition_info")
-    .upsert(
-      {
-        recipe_id: recipeId,
-        ...totalNutrition,
-      },
-      { onConflict: "recipe_id" }
-    );
+  const { error } = await supabase.from("nutrition_info").upsert(
+    {
+      recipe_id: recipeId,
+      ...totalNutrition,
+    },
+    { onConflict: "recipe_id" }
+  );
 
-  if (error) throw new Error(`Error updating nutrition info for recipe ${recipeId}: ${error.message}`);
+  if (error)
+    throw new Error(
+      `Error updating nutrition info for recipe ${recipeId}: ${error.message}`
+    );
   console.log(`Successfully updated nutrition info for recipe ${recipeId}`);
 }
 
+module.exports = { ingestRecipe };

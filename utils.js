@@ -17,16 +17,14 @@ export async function extractIngredientName(input) {
   }
 }
 
-const getRedisClient = () => {
+export function getRedisClient() {
   const client = new Redis({
     url: process.env.REDIS_URL || "",
     token: process.env.REDIS_TOKEN || "",
   });
 
   return client;
-};
-
-export default getRedisClient;
+}
 
 export function normalizeIngredient(ingredient) {
   return ingredient
