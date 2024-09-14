@@ -9,7 +9,7 @@ async function ingestRecipe(recipeData) {
   try {
     const supabase = createClient(supabaseUrl, supabaseKey);
     const recipeId = await insertRecipe(supabase, recipeData);
-    await indexRecipe(supabase, recipeId, recipeData.ingredients);
+    await indexRecipe(supabase, recipeId, recipeData.ingredients, recipeData);
 
     return { success: true, recipeId };
   } catch (error) {
@@ -37,7 +37,7 @@ async function insertRecipe(supabase, recipeData) {
   return data[0].id;
 }
 
-async function indexRecipe(supabase, recipeId, ingredients) {
+async function indexRecipe(supabase, recipeId, ingredients, recipeData) {
   const redis = getRedisClient();
 
   const ingredientData = await Promise.all(
@@ -75,7 +75,7 @@ async function indexRecipe(supabase, recipeId, ingredients) {
     )
   );
 
-  const totalNutrition = calculateTotalNutrition(ingredientData);
+  const totalNutrition = calculateTotalNutrition(ingredientData, recipeData.servings);
   await updateRecipeNutrition(supabase, recipeId, totalNutrition);
 }
 
@@ -113,22 +113,27 @@ async function updateRedis(redis, ingredient, recipeId) {
   `Updated Redis for ingredient: ${ingredient}`;
 }
 
-function calculateTotalNutrition(ingredientData) {
-  return ingredientData.reduce(
+function calculateTotalNutrition(ingredientData, servings) {
+  const total = ingredientData.reduce(
     (total, { nutritionInfo, convertedQuantity }) => {
-      const factor = convertedQuantity / 100; // Calculate the factor based on the converted quantity
+      const factor = convertedQuantity / 100;
       return {
-        calories: Math.round(
-          total.calories + (nutritionInfo?.calories || 0) * factor
-        ),
+        calories: total.calories + (nutritionInfo?.calories || 0) * factor,
         protein: total.protein + (nutritionInfo?.protein || 0) * factor,
         fat: total.fat + (nutritionInfo?.fat || 0) * factor,
-        carbohydrates:
-          total.carbohydrates + (nutritionInfo?.carbohydrates || 0) * factor,
+        carbohydrates: total.carbohydrates + (nutritionInfo?.carbohydrates || 0) * factor,
       };
     },
     { calories: 0, protein: 0, fat: 0, carbohydrates: 0 }
   );
+
+  // Divide by the number of servings and round the values
+  return {
+    calories: Math.round(total.calories / servings),
+    protein: +(total.protein / servings).toFixed(2),
+    fat: +(total.fat / servings).toFixed(2),
+    carbohydrates: +(total.carbohydrates / servings).toFixed(2),
+  };
 }
 
 async function updateRecipeNutrition(supabase, recipeId, totalNutrition) {
@@ -147,7 +152,6 @@ async function updateRecipeNutrition(supabase, recipeId, totalNutrition) {
 }
 
 function parseQuantity(quantityString) {
-  console.log("quantity string: ", quantityString);
   if (quantityString == null) {
     return null;
   }

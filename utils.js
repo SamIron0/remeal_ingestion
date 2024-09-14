@@ -120,7 +120,6 @@ async function callLLMJson(prompt, model = "meta-llama/Meta-Llama-3.1-70B-Instru
 }
 
 async function getNutritionInfo(ingredient) {
-  console.log(`Getting nutrition info for: ${ingredient}`);
   const prompt = `
     Provide the nutritional information for 100 grams of ${ingredient}.
     Return only a SINGLE JSON object with the following properties:
