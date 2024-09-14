@@ -1,24 +1,16 @@
+require("dotenv").config();
 const axios = require("axios");
 const { createClient } = require("@supabase/supabase-js");
-const { getRedisClient } = require("./utils"); // Assume this is implemented
-const {
-  extractIngredientName,
-  normalizeIngredient,
-  getNutritionInfo,
-} = require("./utils"); // Assume these are implemented
-
+const { getRedisClient, extractIngredientInfo, callLLM } = require("./utils"); // Assume this is implemented
+const { normalizeIngredient, getNutritionInfo } = require("./utils"); // Assume these are implemented
 async function ingestRecipe(recipeData) {
-  const supabaseUrl = process.env.SUPABASE_URL;
-  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseKey = process.env.SUPABASE_KEY;
   try {
-    console.log("Starting recipe ingestion");
-    console.log("Received recipe data:", recipeData);
-
     const supabase = createClient(supabaseUrl, supabaseKey);
     const recipeId = await insertRecipe(supabase, recipeData);
     await indexRecipe(supabase, recipeId, recipeData.ingredients);
 
-    console.log("Recipe ingestion successful");
     return { success: true, recipeId };
   } catch (error) {
     console.error("Error in recipe ingestion:", error);
@@ -27,7 +19,6 @@ async function ingestRecipe(recipeData) {
 }
 
 async function insertRecipe(supabase, recipeData) {
-  console.log("Inserting recipe into database");
   const { data, error } = await supabase
     .from("recipes")
     .insert({
@@ -43,20 +34,38 @@ async function insertRecipe(supabase, recipeData) {
 
   if (error) throw new Error(`Error inserting recipe: ${error.message}`);
 
-  console.log("Recipe inserted successfully:", data);
   return data[0].id;
 }
 
 async function indexRecipe(supabase, recipeId, ingredients) {
-  console.log(`Starting indexRecipe for recipeId: ${recipeId}`);
   const redis = getRedisClient();
 
   const ingredientData = await Promise.all(
     ingredients.map(async (ingredient) => {
-      const extractedName = await extractIngredientName(ingredient);
-      const normalizedName = normalizeIngredient(extractedName);
+      const { quantity, unit, name } = await extractIngredientInfo(ingredient);
+      const normalizedName = normalizeIngredient(name);
       const nutritionInfo = await getNutritionInfo(normalizedName);
-      return { extractedName, normalizedName, nutritionInfo };
+      const convertedQuantity = await convertToStandardUnit(
+        quantity,
+        unit,
+        name
+      );
+      const caloriesForConvertedQuantity =
+        (nutritionInfo?.calories || 0) * (convertedQuantity / 100);
+      console.log(
+        `${quantity} ${unit ? unit : ""} ${name} = ${Math.round(
+          caloriesForConvertedQuantity
+        )} calories (converted from ${convertedQuantity}g)`
+      );
+      return {
+        extractedName: name,
+        normalizedName,
+        nutritionInfo,
+        originalQuantity: quantity,
+        originalUnit: unit,
+        convertedQuantity,
+        unit: "g",
+      };
     })
   );
 
@@ -68,23 +77,19 @@ async function indexRecipe(supabase, recipeId, ingredients) {
 
   const totalNutrition = calculateTotalNutrition(ingredientData);
   await updateRecipeNutrition(supabase, recipeId, totalNutrition);
-
-  console.log(`Finished indexRecipe for recipeId: ${recipeId}`);
 }
 
 async function indexIngredient(
   supabase,
   redis,
   recipeId,
-  { extractedName, nutritionInfo }
+  { extractedName, nutritionInfo, originalQuantity, originalUnit }
 ) {
-  console.log(`Processing ingredient: ${extractedName}`);
-
   const { error } = await supabase.rpc("index_ingredient", {
     p_recipe_id: recipeId,
     p_ingredient: extractedName,
-    p_quantity: 1, // Default quantity, adjust as needed
-    p_unit: "", // Default empty unit, adjust as needed
+    p_quantity: parseQuantity(originalQuantity),
+    p_unit: originalUnit || "",
     p_calories: nutritionInfo?.calories || 0,
     p_protein: nutritionInfo?.protein || 0,
     p_fat: nutritionInfo?.fat || 0,
@@ -105,17 +110,23 @@ async function updateRedis(redis, ingredient, recipeId) {
     ? `${existingRecipes},${recipeId}`
     : `${recipeId}`;
   await redis.set(ingredient, newValue);
-  console.log(`Updated Redis for ingredient: ${ingredient}`);
+  `Updated Redis for ingredient: ${ingredient}`;
 }
 
 function calculateTotalNutrition(ingredientData) {
   return ingredientData.reduce(
-    (total, { nutritionInfo }) => ({
-      calories: total.calories + (nutritionInfo?.calories || 0),
-      protein: total.protein + (nutritionInfo?.protein || 0),
-      fat: total.fat + (nutritionInfo?.fat || 0),
-      carbohydrates: total.carbohydrates + (nutritionInfo?.carbohydrates || 0),
-    }),
+    (total, { nutritionInfo, convertedQuantity }) => {
+      const factor = convertedQuantity / 100; // Calculate the factor based on the converted quantity
+      return {
+        calories: Math.round(
+          total.calories + (nutritionInfo?.calories || 0) * factor
+        ),
+        protein: total.protein + (nutritionInfo?.protein || 0) * factor,
+        fat: total.fat + (nutritionInfo?.fat || 0) * factor,
+        carbohydrates:
+          total.carbohydrates + (nutritionInfo?.carbohydrates || 0) * factor,
+      };
+    },
     { calories: 0, protein: 0, fat: 0, carbohydrates: 0 }
   );
 }
@@ -133,7 +144,35 @@ async function updateRecipeNutrition(supabase, recipeId, totalNutrition) {
     throw new Error(
       `Error updating nutrition info for recipe ${recipeId}: ${error.message}`
     );
-  console.log(`Successfully updated nutrition info for recipe ${recipeId}`);
+}
+
+function parseQuantity(quantityString) {
+  console.log("quantity string: ", quantityString);
+  if (quantityString == null) {
+    return null;
+  }
+  if (quantityString.includes("/")) {
+    const [numerator, denominator] = quantityString.split("/");
+    return parseFloat(numerator) / parseFloat(denominator);
+  }
+  const parsedValue = parseFloat(quantityString);
+  return isNaN(parsedValue) ? null : parsedValue;
+}
+
+async function convertToStandardUnit(quantity, unit, ingredient) {
+  const prompt = `
+    Convert ${quantity} ${unit ? unit : ""} ${ingredient} to grams.
+    Respond with only a number representing the equivalent weight in grams, rounded.
+  `;
+
+  try {
+    const response = await callLLM(prompt);
+    const convertedQuantity = parseInt(response.trim(), 10);
+    return isNaN(convertedQuantity) ? 100 : convertedQuantity;
+  } catch (error) {
+    console.error(`Error converting ${ingredient} to standard unit:`, error);
+    return 100; // Default to 100g if conversion fails
+  }
 }
 
 module.exports = { ingestRecipe };

@@ -1,32 +1,38 @@
-import { Redis } from "@upstash/redis";
-export async function extractIngredientName(input) {
+const { Redis } = require("@upstash/redis");
+
+async function extractIngredientInfo(input) {
   const prompt = `
-    Extract the main ingredient name from the following ingredient description:
+    Extract the quantity, unit (if present), and main ingredient name from the following ingredient description:
     "${input}"
 
-    Respond with ONLY the single main ingredient name, nothing else. If there are multiple ingredients, choose the most prominent one.
+    Respond with a JSON object containing the following properties:
+    {
+      "quantity": number or fraction (as string),
+      "unit": string (or null if not present),
+      "name": string (main ingredient name)
+    }
+    Do not include any explanations or additional text.
   `;
 
   try {
-    const response = await callLLM(prompt);
-    console.log("LLM response:", response);
-    return response.trim();
+    const response = await callLLMJson(prompt);
+    return JSON.parse(response);
   } catch (error) {
-    console.error("Error extracting ingredient name:", error);
-    return normalizeIngredient(input);
+    console.error("Error extracting ingredient info:", error);
+    return {
+      quantity: "1",
+      unit: null,
+      name: normalizeIngredient(input),
+    };
   }
 }
 
-export function getRedisClient() {
-  const client = new Redis({
-    url: process.env.REDIS_URL || "",
-    token: process.env.REDIS_TOKEN || "",
-  });
-
+function getRedisClient() {
+  const client = Redis.fromEnv();
   return client;
 }
 
-export function normalizeIngredient(ingredient) {
+function normalizeIngredient(ingredient) {
   return ingredient
     .toLowerCase()
     .replace(/[^\w\s]/g, "")
@@ -34,7 +40,7 @@ export function normalizeIngredient(ingredient) {
     .trim();
 }
 
-export async function callLLM(prompt) {
+async function callLLM(prompt, model = "meta-llama/Meta-Llama-3.1-70B-Instruct") {
   const response = await fetch(
     "https://api.deepinfra.com/v1/openai/chat/completions",
     {
@@ -44,7 +50,7 @@ export async function callLLM(prompt) {
         Authorization: `Bearer ${process.env.DEEP_INFRA_API_KEY}`,
       },
       body: JSON.stringify({
-        model: "meta-llama/Meta-Llama-3.1-70B-Instruct",
+        model: model,
         messages: [
           {
             role: "system",
@@ -69,7 +75,7 @@ export async function callLLM(prompt) {
   return content;
 }
 
-export async function callLLMJson(prompt) {
+async function callLLMJson(prompt, model = "meta-llama/Meta-Llama-3.1-70B-Instruct") {
   const response = await fetch(
     "https://api.deepinfra.com/v1/openai/chat/completions",
     {
@@ -79,7 +85,7 @@ export async function callLLMJson(prompt) {
         Authorization: `Bearer ${process.env.DEEP_INFRA_API_KEY}`,
       },
       body: JSON.stringify({
-        model: "meta-llama/Meta-Llama-3.1-70B-Instruct",
+        model: model,
         messages: [
           {
             role: "system",
@@ -113,31 +119,27 @@ export async function callLLMJson(prompt) {
   }
 }
 
-export async function getNutritionInfo(ingredient) {
+async function getNutritionInfo(ingredient) {
   console.log(`Getting nutrition info for: ${ingredient}`);
   const prompt = `
     Provide the nutritional information for 100 grams of ${ingredient}.
-    Return only a JSON object with the following properties:
+    Return only a SINGLE JSON object with the following properties:
     {
       "calories": number,
       "protein": number (in grams),
       "fat": number (in grams),
       "carbohydrates": number (in grams)
     }
-    Do not include any explanations or additional text.
+    Do not include any explanations, additional text, or arrays. Return ONLY ONE JSON object.
   `;
 
   try {
-    console.log("Calling LLM for nutrition info");
     const response = await callLLMJson(prompt);
-    console.log("LLM response:", JSON.stringify(response));
 
     // Parse the JSON string into an object
     const parsedResponse = JSON.parse(response);
-    console.log("Parsed response:", JSON.stringify(parsedResponse));
 
     if (isNutritionInfo(parsedResponse)) {
-      console.log("Valid nutrition info received");
       return parsedResponse;
     }
     console.error(
@@ -158,10 +160,6 @@ export async function getNutritionInfo(ingredient) {
 
 // Update the type guard function
 function isNutritionInfo(obj) {
-  console.log(
-    "Checking if object is valid nutrition info:",
-    JSON.stringify(obj)
-  );
   const isValid =
     typeof obj === "object" &&
     obj !== null &&
@@ -169,6 +167,15 @@ function isNutritionInfo(obj) {
     typeof obj.protein === "number" &&
     typeof obj.fat === "number" &&
     typeof obj.carbohydrates === "number";
-  console.log("Is valid nutrition info:", isValid);
   return isValid;
 }
+
+// Replace export statements with module.exports
+module.exports = {
+  extractIngredientInfo,
+  getRedisClient,
+  normalizeIngredient,
+  callLLM,
+  callLLMJson,
+  getNutritionInfo,
+};
