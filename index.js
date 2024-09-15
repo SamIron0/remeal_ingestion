@@ -52,11 +52,7 @@ async function indexRecipe(supabase, recipeId, ingredients, recipeData) {
       );
       const caloriesForConvertedQuantity =
         (nutritionInfo?.calories || 0) * (convertedQuantity / 100);
-      console.log(
-        `${quantity} ${unit ? unit : ""} ${name} = ${Math.round(
-          caloriesForConvertedQuantity
-        )} calories (converted from ${convertedQuantity}g)`
-      );
+    
       return {
         extractedName: name,
         normalizedName,
@@ -164,6 +160,9 @@ function parseQuantity(quantityString) {
 }
 
 async function convertToStandardUnit(quantity, unit, ingredient) {
+  if(quantity==null){
+    return 0
+  }
   const prompt = `
     Convert ${quantity} ${unit ? unit : ""} ${ingredient} to grams.
     Respond with only a number representing the equivalent weight in grams, rounded.
@@ -172,10 +171,10 @@ async function convertToStandardUnit(quantity, unit, ingredient) {
   try {
     const response = await callLLM(prompt);
     const convertedQuantity = parseInt(response.trim(), 10);
-    return isNaN(convertedQuantity) ? 100 : convertedQuantity;
+    return isNaN(convertedQuantity) ? 0 : convertedQuantity;
   } catch (error) {
     console.error(`Error converting ${ingredient} to standard unit:`, error);
-    return 100; // Default to 100g if conversion fails
+    return 0; // Default to 100g if conversion fails
   }
 }
 
