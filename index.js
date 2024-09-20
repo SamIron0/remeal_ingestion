@@ -34,7 +34,19 @@ async function insertRecipe(supabase, recipeData) {
 
   if (error) throw new Error(`Error inserting recipe: ${error.message}`);
 
-  return data[0].id;
+  const recipeId = data[0].id;
+
+  // Insert the embedding
+  const { error: embeddingError } = await supabase
+    .from("recipe_vectors")
+    .insert({
+      recipe_id: recipeId,
+      embedding: recipeData.embedding
+    });
+
+  if (embeddingError) throw new Error(`Error inserting recipe embedding: ${embeddingError.message}`);
+
+  return recipeId;
 }
 
 async function indexRecipe(supabase, recipeId, ingredients, recipeData) {
@@ -79,13 +91,14 @@ async function indexIngredient(
   supabase,
   redis,
   recipeId,
-  { extractedName, nutritionInfo, originalQuantity, originalUnit }
+  { extractedName, nutritionInfo, originalQuantity, originalUnit, convertedQuantity }
 ) {
   const { error } = await supabase.rpc("index_ingredient", {
     p_recipe_id: recipeId,
     p_ingredient: extractedName,
     p_quantity: parseQuantity(originalQuantity),
     p_unit: originalUnit || "",
+    p_converted_quantity: convertedQuantity,
     p_calories: nutritionInfo?.calories || 0,
     p_protein: nutritionInfo?.protein || 0,
     p_fat: nutritionInfo?.fat || 0,
