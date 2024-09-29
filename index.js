@@ -10,6 +10,7 @@ async function ingestRecipe(recipeData) {
     const supabase = createClient(supabaseUrl, supabaseKey);
     const recipeId = await insertRecipe(supabase, recipeData);
     await indexRecipe(supabase, recipeId, recipeData.ingredients, recipeData);
+    await insertCategories(supabase, recipeId, recipeData.categories);
 
     return { success: true, recipeId };
   } catch (error) {
@@ -41,10 +42,13 @@ async function insertRecipe(supabase, recipeData) {
     .from("recipe_vectors")
     .insert({
       recipe_id: recipeId,
-      embedding: recipeData.embedding
+      embedding: recipeData.embedding,
     });
 
-  if (embeddingError) throw new Error(`Error inserting recipe embedding: ${embeddingError.message}`);
+  if (embeddingError)
+    throw new Error(
+      `Error inserting recipe embedding: ${embeddingError.message}`
+    );
 
   return recipeId;
 }
@@ -62,9 +66,6 @@ async function indexRecipe(supabase, recipeId, ingredients, recipeData) {
         unit,
         name
       );
-      const caloriesForConvertedQuantity =
-        (nutritionInfo?.calories || 0) * (convertedQuantity / 100);
-    
       return {
         extractedName: name,
         normalizedName,
@@ -82,8 +83,10 @@ async function indexRecipe(supabase, recipeId, ingredients, recipeData) {
       indexIngredient(supabase, redis, recipeId, data)
     )
   );
-
-  const totalNutrition = calculateTotalNutrition(ingredientData, recipeData.servings);
+  const totalNutrition = calculateTotalNutrition(
+    ingredientData,
+    recipeData.servings
+  );
   await updateRecipeNutrition(supabase, recipeId, totalNutrition);
 }
 
@@ -91,7 +94,13 @@ async function indexIngredient(
   supabase,
   redis,
   recipeId,
-  { extractedName, nutritionInfo, originalQuantity, originalUnit, convertedQuantity }
+  {
+    extractedName,
+    nutritionInfo,
+    originalQuantity,
+    originalUnit,
+    convertedQuantity,
+  }
 ) {
   const { error } = await supabase.rpc("index_ingredient", {
     p_recipe_id: recipeId,
@@ -130,7 +139,8 @@ function calculateTotalNutrition(ingredientData, servings) {
         calories: total.calories + (nutritionInfo?.calories || 0) * factor,
         protein: total.protein + (nutritionInfo?.protein || 0) * factor,
         fat: total.fat + (nutritionInfo?.fat || 0) * factor,
-        carbohydrates: total.carbohydrates + (nutritionInfo?.carbohydrates || 0) * factor,
+        carbohydrates:
+          total.carbohydrates + (nutritionInfo?.carbohydrates || 0) * factor,
       };
     },
     { calories: 0, protein: 0, fat: 0, carbohydrates: 0 }
@@ -173,8 +183,8 @@ function parseQuantity(quantityString) {
 }
 
 async function convertToStandardUnit(quantity, unit, ingredient) {
-  if(quantity==null){
-    return 0
+  if (quantity == null) {
+    return 0;
   }
   const prompt = `
     Convert ${quantity} ${unit ? unit : ""} ${ingredient} to grams.
@@ -189,6 +199,26 @@ async function convertToStandardUnit(quantity, unit, ingredient) {
     console.error(`Error converting ${ingredient} to standard unit:`, error);
     return 0; // Default to 100g if conversion fails
   }
+}
+
+async function insertCategories(supabase, recipeId, categories) {
+  console.log("categories", categories);
+  const category_ids = categories.map(async (category) => {
+    const { data, error } = await supabase
+      .from("categories")
+      .select("category_id")
+      .eq("name", category)
+      .single();
+    return data.category_id;
+  });
+  const { error } = await supabase.from("recipe_categories").insert(
+    categories.map((category) => ({
+      recipe_id: recipeId,
+      category_id: category,
+    }))
+  );
+
+  if (error) throw new Error(`Error inserting categories: ${error.message}`);
 }
 
 module.exports = { ingestRecipe };
