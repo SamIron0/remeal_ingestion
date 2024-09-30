@@ -6,14 +6,10 @@ const { normalizeIngredient, getNutritionInfo } = require("./utils"); // Assume 
 async function ingestRecipe(recipeData) {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseKey = process.env.SUPABASE_KEY;
-  console.log("Starting recipe ingestion process");
   try {
     const supabase = createClient(supabaseUrl, supabaseKey);
-    console.log("Supabase client created");
     const recipeId = await insertRecipe(supabase, recipeData);
-    console.log(`Recipe inserted with ID: ${recipeId}`);
     await indexRecipe(supabase, recipeId, recipeData.ingredients, recipeData);
-    console.log("Recipe indexed successfully");
 
     return { success: true, recipeId };
   } catch (error) {
@@ -23,7 +19,6 @@ async function ingestRecipe(recipeData) {
 }
 
 async function insertRecipe(supabase, recipeData) {
-  console.log("Inserting recipe into database");
   const { data, error } = await supabase
     .from("recipes")
     .insert({
@@ -43,16 +38,13 @@ async function insertRecipe(supabase, recipeData) {
   }
 
   const recipeId = data[0].id;
-  console.log(`Recipe inserted successfully with ID: ${recipeId}`);
 
   return recipeId;
 }
 
 async function indexRecipe(supabase, recipeId, ingredients, recipeData) {
-  console.log(`Indexing recipe with ID: ${recipeId}`);
   const ingredientData = await Promise.all(
     ingredients.map(async (ingredient) => {
-      console.log(`Processing ingredient: ${ingredient}`);
       const { quantity, unit, name } = await extractIngredientInfo(ingredient);
       const normalizedName = normalizeIngredient(name);
       const nutritionInfo = await getNutritionInfo(normalizedName);
@@ -61,7 +53,6 @@ async function indexRecipe(supabase, recipeId, ingredients, recipeData) {
         unit,
         name
       );
-      console.log(`Ingredient processed: ${name}`);
       return {
         extractedName: name,
         normalizedName,
@@ -74,20 +65,14 @@ async function indexRecipe(supabase, recipeId, ingredients, recipeData) {
     })
   );
 
-  console.log("Indexing ingredients");
   await Promise.all(
     ingredientData.map((data) => indexIngredient(supabase, recipeId, data))
   );
-  console.log("Ingredients indexed successfully");
-
-  console.log("Calculating total nutrition");
   const totalNutrition = calculateTotalNutrition(
     ingredientData,
     recipeData.servings
   );
-  console.log("Updating recipe nutrition");
   await updateRecipeNutrition(supabase, recipeId, totalNutrition);
-  console.log("Recipe nutrition updated successfully");
 }
 
 async function indexIngredient(
