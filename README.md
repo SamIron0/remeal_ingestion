@@ -45,15 +45,14 @@ Ingests a new recipe into the system.
 Request body:
 
 ```json
-json
 {
-"name": "Recipe Name",
-"ingredients": ["ingredient 1", "ingredient 2", ...],
-"instructions": ["step 1", "step 2", ...],
-"description": "Recipe description",
-"cook_time": 30,
-"prep_time": 15,
-"servings": 4
+    "name": "Recipe Name",
+    "ingredients": ["ingredient 1", "ingredient 2", ...],
+    "instructions": ["step 1", "step 2", ...],
+    "description": "Recipe description",
+    "cook_time": 30,
+    "prep_time": 15,
+    "servings": 4
 }
 ```
 
