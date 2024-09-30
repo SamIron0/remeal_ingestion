@@ -1,4 +1,3 @@
-const { Redis } = require("@upstash/redis");
 
 async function extractIngredientInfo(input) {
   const prompt = `
@@ -25,11 +24,6 @@ async function extractIngredientInfo(input) {
       name: normalizeIngredient(input),
     };
   }
-}
-
-function getRedisClient() {
-  const client = Redis.fromEnv();
-  return client;
 }
 
 function normalizeIngredient(ingredient) {
@@ -172,7 +166,6 @@ function isNutritionInfo(obj) {
 // Replace export statements with module.exports
 module.exports = {
   extractIngredientInfo,
-  getRedisClient,
   normalizeIngredient,
   callLLM,
   callLLMJson,

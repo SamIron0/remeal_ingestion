@@ -1,16 +1,19 @@
 require("dotenv").config();
 const axios = require("axios");
 const { createClient } = require("@supabase/supabase-js");
-const { getRedisClient, extractIngredientInfo, callLLM } = require("./utils"); // Assume this is implemented
+const { extractIngredientInfo, callLLM } = require("./utils"); // Assume this is implemented
 const { normalizeIngredient, getNutritionInfo } = require("./utils"); // Assume these are implemented
 async function ingestRecipe(recipeData) {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseKey = process.env.SUPABASE_KEY;
+  console.log("Starting recipe ingestion process");
   try {
     const supabase = createClient(supabaseUrl, supabaseKey);
+    console.log("Supabase client created");
     const recipeId = await insertRecipe(supabase, recipeData);
+    console.log(`Recipe inserted with ID: ${recipeId}`);
     await indexRecipe(supabase, recipeId, recipeData.ingredients, recipeData);
-    await insertCategories(supabase, recipeId, recipeData.categories);
+    console.log("Recipe indexed successfully");
 
     return { success: true, recipeId };
   } catch (error) {
@@ -20,6 +23,7 @@ async function ingestRecipe(recipeData) {
 }
 
 async function insertRecipe(supabase, recipeData) {
+  console.log("Inserting recipe into database");
   const { data, error } = await supabase
     .from("recipes")
     .insert({
@@ -33,31 +37,22 @@ async function insertRecipe(supabase, recipeData) {
     })
     .select();
 
-  if (error) throw new Error(`Error inserting recipe: ${error.message}`);
+  if (error) {
+    console.error("Error inserting recipe:", error);
+    throw new Error(`Error inserting recipe: ${error.message}`);
+  }
 
   const recipeId = data[0].id;
-
-  // Insert the embedding
-  const { error: embeddingError } = await supabase
-    .from("recipe_vectors")
-    .insert({
-      recipe_id: recipeId,
-      embedding: recipeData.embedding,
-    });
-
-  if (embeddingError)
-    throw new Error(
-      `Error inserting recipe embedding: ${embeddingError.message}`
-    );
+  console.log(`Recipe inserted successfully with ID: ${recipeId}`);
 
   return recipeId;
 }
 
 async function indexRecipe(supabase, recipeId, ingredients, recipeData) {
-  const redis = getRedisClient();
-
+  console.log(`Indexing recipe with ID: ${recipeId}`);
   const ingredientData = await Promise.all(
     ingredients.map(async (ingredient) => {
+      console.log(`Processing ingredient: ${ingredient}`);
       const { quantity, unit, name } = await extractIngredientInfo(ingredient);
       const normalizedName = normalizeIngredient(name);
       const nutritionInfo = await getNutritionInfo(normalizedName);
@@ -66,6 +61,7 @@ async function indexRecipe(supabase, recipeId, ingredients, recipeData) {
         unit,
         name
       );
+      console.log(`Ingredient processed: ${name}`);
       return {
         extractedName: name,
         normalizedName,
@@ -78,21 +74,24 @@ async function indexRecipe(supabase, recipeId, ingredients, recipeData) {
     })
   );
 
+  console.log("Indexing ingredients");
   await Promise.all(
-    ingredientData.map((data) =>
-      indexIngredient(supabase, redis, recipeId, data)
-    )
+    ingredientData.map((data) => indexIngredient(supabase, recipeId, data))
   );
+  console.log("Ingredients indexed successfully");
+
+  console.log("Calculating total nutrition");
   const totalNutrition = calculateTotalNutrition(
     ingredientData,
     recipeData.servings
   );
+  console.log("Updating recipe nutrition");
   await updateRecipeNutrition(supabase, recipeId, totalNutrition);
+  console.log("Recipe nutrition updated successfully");
 }
 
 async function indexIngredient(
   supabase,
-  redis,
   recipeId,
   {
     extractedName,
@@ -118,17 +117,6 @@ async function indexIngredient(
     throw new Error(
       `Error in index_ingredient for ${extractedName}: ${error.message}`
     );
-
-  await updateRedis(redis, extractedName, recipeId);
-}
-
-async function updateRedis(redis, ingredient, recipeId) {
-  const existingRecipes = await redis.get(ingredient);
-  const newValue = existingRecipes
-    ? `${existingRecipes},${recipeId}`
-    : `${recipeId}`;
-  await redis.set(ingredient, newValue);
-  `Updated Redis for ingredient: ${ingredient}`;
 }
 
 function calculateTotalNutrition(ingredientData, servings) {
@@ -199,26 +187,6 @@ async function convertToStandardUnit(quantity, unit, ingredient) {
     console.error(`Error converting ${ingredient} to standard unit:`, error);
     return 0; // Default to 100g if conversion fails
   }
-}
-
-async function insertCategories(supabase, recipeId, categories) {
-  console.log("categories", categories);
-  const category_ids = categories.map(async (category) => {
-    const { data, error } = await supabase
-      .from("categories")
-      .select("category_id")
-      .eq("name", category)
-      .single();
-    return data.category_id;
-  });
-  const { error } = await supabase.from("recipe_categories").insert(
-    categories.map((category) => ({
-      recipe_id: recipeId,
-      category_id: category,
-    }))
-  );
-
-  if (error) throw new Error(`Error inserting categories: ${error.message}`);
 }
 
 module.exports = { ingestRecipe };
