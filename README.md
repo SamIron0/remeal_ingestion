@@ -1,6 +1,6 @@
 # Recipe Ingestion Microservice
 
-This microservice is responsible for ingesting and processing recipe data for the Remeal application. It handles the insertion of new recipes into the database, including ingredient indexing and nutrition information calculation.
+This microservice is responsible for ingesting and processing recipe data the[Remeal application](https://github.com/SamIron0/remeal_ui) . It handles the insertion of new recipes into the database, including ingredient indexing and nutrition information calculation.
 
 ## Features
 
