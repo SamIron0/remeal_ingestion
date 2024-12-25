@@ -1,4 +1,3 @@
-
 async function extractIngredientInfo(input) {
   const prompt = `
     Extract the quantity, unit (if present), and main ingredient name from the following ingredient description:
@@ -129,7 +128,6 @@ async function getNutritionInfo(ingredient) {
   try {
     const response = await callLLMJson(prompt);
 
-    // Parse the JSON string into an object
     const parsedResponse = JSON.parse(response);
 
     if (isNutritionInfo(parsedResponse)) {
@@ -151,7 +149,6 @@ async function getNutritionInfo(ingredient) {
   }
 }
 
-// Update the type guard function
 function isNutritionInfo(obj) {
   const isValid =
     typeof obj === "object" &&
@@ -163,7 +160,6 @@ function isNutritionInfo(obj) {
   return isValid;
 }
 
-// Replace export statements with module.exports
 module.exports = {
   extractIngredientInfo,
   normalizeIngredient,

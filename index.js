@@ -1,8 +1,7 @@
 require("dotenv").config();
-const axios = require("axios");
 const { createClient } = require("@supabase/supabase-js");
-const { extractIngredientInfo, callLLM } = require("./utils"); // Assume this is implemented
-const { normalizeIngredient, getNutritionInfo } = require("./utils"); // Assume these are implemented
+const { extractIngredientInfo, callLLM } = require("./utils");
+const { normalizeIngredient, getNutritionInfo } = require("./utils");
 async function ingestRecipe(recipeData) {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseKey = process.env.SUPABASE_KEY;
@@ -28,7 +27,7 @@ async function insertRecipe(supabase, recipeData) {
       cook_time: recipeData.cook_time,
       prep_time: recipeData.prep_time,
       servings: recipeData.servings,
-      user_id: null, // Assuming this is set to null for admin-created recipes
+      user_id: null,
     })
     .select();
 
@@ -170,7 +169,7 @@ async function convertToStandardUnit(quantity, unit, ingredient) {
     return isNaN(convertedQuantity) ? 0 : convertedQuantity;
   } catch (error) {
     console.error(`Error converting ${ingredient} to standard unit:`, error);
-    return 0; // Default to 100g if conversion fails
+    return 0;
   }
 }
 

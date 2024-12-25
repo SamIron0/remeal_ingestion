@@ -18,13 +18,8 @@ This microservice is responsible for ingesting and processing recipe data for th
 npm install
 ```
 
-3. Create a `.env` file with the following environment variables:
-
-```bash
-NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
-SUPABASE_KEY=your_supabase_key
-DEEP_INFRA_API_KEY=your_deep_infra_api_key
-```
+3. Set up environment variables:
+   Create a `.env.local` file in the root directory and add the necessary environment variables (refer to `.env.example`).
 
 ## Usage
 
@@ -64,14 +59,6 @@ Response:
   "message": "Recipe ingested successfully"
 }
 ```
-
-## Key Components
-
-- `index.js`: Main logic for recipe ingestion and processing
-- `server.js`: Express server setup and route handling
-- `utils.js`: Utility functions for ingredient processing and LLM interactions
-
-## Dependencies
 
 ## License
 
